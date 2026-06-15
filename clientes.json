@@ -1,0 +1,56 @@
+[
+  {
+    "_id": "11111111-1",
+    "nombre": "Juan Pérez",
+    "email": "juan.perez@gmail.com",
+    "fecha_registro": "2025-08-14",
+    "direccion": "Av. Libertad 1024, Santiago",
+    "Telefono": "+56911112222",
+    "Activo": true
+  },
+  {
+    "_id": "22222222-2",
+    "nombre": "María López",
+    "email": "maria.lopez@outlook.com",
+    "fecha_registro": "2023-03-22",
+    "direccion": "Calle Los Alerces 45, Viña del Mar",
+    "Telefono": "+56933334444",
+    "Activo": true
+  },
+  {
+    "_id": "33333333-3",
+    "nombre": "Carlos Gómez",
+    "email": "carlos.gomez@gmail.com",
+    "fecha_registro": "2026-01-10",
+    "direccion": "Pasaje El Sol 89, Concepción",
+    "Telefono": "+56955556666",
+    "Activo": true
+  },
+  {
+    "_id": "44444444-4",
+    "nombre": "Ana Rodríguez",
+    "email": "ana.rodriguez@yahoo.com",
+    "fecha_registro": "2025-11-05",
+    "direccion": "Balmaceda 432, La Serena",
+    "Telefono": "+56977778888",
+    "Activo": true
+  },
+  {
+    "_id": "55555555-5",
+    "nombre": "Pedro Picapiedra",
+    "email": "pedro.p@gmail.com",
+    "fecha_registro": "2022-05-20",
+    "direccion": "Roca Dura 123",
+    "Telefono": "+56999990000",
+    "Activo": true
+  },
+  {
+    "_id": "66666666-6",
+    "nombre": "Pedro Picapiedra",
+    "email": "pedro.p@gmail.com",
+    "fecha_registro": "2022-05-20",
+    "direccion": "Roca Dura 123",
+    "Telefono": "+56999990000",
+    "Activo": false
+  }
+]

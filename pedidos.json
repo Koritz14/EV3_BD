@@ -1,0 +1,50 @@
+[
+  {
+    "_id": 1000,
+    "cliente_id": "11111111-1",
+    "fecha_pedido": "2025-09-01",
+    "monto_total": 120.50,
+    "productos": [
+      { "producto_id": 101, "cantidad": 1, "precio": 100.00 },
+      { "producto_id": 102, "cantidad": 1, "precio": 20.50 }
+    ]
+  },
+  {
+    "_id": 1101,
+    "cliente_id": "22222222-2",
+    "fecha_pedido": "2023-05-12",
+    "monto_total": 45.00,
+    "productos": [
+      { "producto_id": 103, "cantidad": 3, "precio": 15.00 }
+    ]
+  },
+  {
+    "_id": 1001,
+    "cliente_id": "33333333-3",
+    "fecha_pedido": "2026-02-14",
+    "monto_total": 550.00,
+    "productos": [
+      { "producto_id": 101, "cantidad": 2, "precio": 250.00 },
+      { "producto_id": 104, "cantidad": 1, "precio": 50.00 }
+    ]
+  },
+  {
+    "_id": 1010,
+    "cliente_id": "44444444-4",
+    "fecha_pedido": "2023-11-20",
+    "monto_total": 210.00,
+    "productos": [
+      { "producto_id": 105, "cantidad": 1, "precio": 210.00 }
+    ]
+  },
+  {
+    "_id": 1111,
+    "cliente_id": "55555555-5",
+    "fecha_pedido": "2026-04-05",
+    "monto_total": 85.00,
+    "productos": [
+      { "producto_id": 102, "cantidad": 1, "precio": 20.50 },
+      { "producto_id": 106, "cantidad": 2, "precio": 32.25 }
+    ]
+  }
+]

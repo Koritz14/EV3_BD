@@ -1,0 +1,404 @@
+"""
+Aplicación de consola - Consultas avanzadas con MongoDB
+Unidad 3: Búsqueda avanzada con MongoDB
+"""
+
+import json
+import os
+import re
+from datetime import datetime
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+
+
+# ─────────────────────────────────────────────
+#  CONEXIÓN A MONGODB
+# ─────────────────────────────────────────────
+def conectar():
+    """
+    Establece conexión con MongoDB Compass (local).
+    Cambia la URI si tu instancia usa otro puerto o autenticación.
+    """
+    try:
+        cliente = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=3000)
+        cliente.admin.command("ping")
+        print("✅ Conexión exitosa a MongoDB\n")
+        return cliente
+    except ConnectionFailure:
+        print("❌ No se pudo conectar a MongoDB. Asegúrate de que Compass esté activo.")
+        return None
+
+
+# ─────────────────────────────────────────────
+#  CARGA DE DATOS DESDE JSON
+# ─────────────────────────────────────────────
+
+def limpiar_documento(doc):
+    """
+    Los JSON de evaluación suelen venir con valores tipo ISODate("...") que
+    no son JSON estándar. Esta función los convierte a objetos datetime de Python
+    para que MongoDB los almacene correctamente como tipo Date.
+    """
+    doc_limpio = {}
+    for clave, valor in doc.items():
+        if isinstance(valor, str) and valor.startswith("ISODate("):
+            # Extraemos la fecha entre comillas: ISODate("2025-08-14") → "2025-08-14"
+            fecha_str = valor[9:-2]          # quita ISODate(" y ")
+            try:
+                doc_limpio[clave] = datetime.strptime(fecha_str, "%Y-%m-%d")
+            except ValueError:
+                doc_limpio[clave] = valor    # si no parsea, lo deja como string
+        elif isinstance(valor, list):
+            doc_limpio[clave] = [limpiar_documento(item) if isinstance(item, dict) else item
+                                 for item in valor]
+        elif isinstance(valor, dict):
+            doc_limpio[clave] = limpiar_documento(valor)
+        else:
+            doc_limpio[clave] = valor
+    return doc_limpio
+
+
+def limpiar_sintaxis_json(contenido):
+    """
+    Corrige errores de sintaxis comunes en JSON generados manualmente
+    o exportados desde MongoDB shell:
+
+      1. ISODate("...")        → "ISODate(...)"  (valor temporal)
+      2. "clave":,            → "clave": null,   (valor vacío por error)
+      3. "clave": value,\n}   → sin coma colgante antes de } o ]
+      4. "),                  → ",               (paréntesis en lugar de comilla)
+      5. falta coma entre pares  "valor"\n"clave" → "valor",\n"clave"
+      6. Punto y coma final   ];  → ]
+    """
+    import re
+
+    # 1. ISODate("2025-08-14") → "ISODate(2025-08-14)"
+    contenido = re.sub(r'ISODate\("([^"]+)"\)', r'"ISODate(\1)"', contenido)
+
+    # 2. "campo":, → "campo": null,
+    contenido = re.sub(r':\s*,', ': null,', contenido)
+
+    # 3. Paréntesis de cierre pegado a comilla de _id: "33333333-3")
+    #    Lo reemplazamos por comilla normal
+    contenido = re.sub(r'("[\w\-]+")\)', r'\1"', contenido)
+    # También el caso "33333333-3") → "33333333-3"
+    contenido = re.sub(r'\)\s*,', '",', contenido)
+
+    # 4. Coma faltante entre valor y siguiente clave:
+    #    "value"\n    "key"  →  "value",\n    "key"
+    contenido = re.sub(r'("(?:[^"\\]|\\.)*")\s*\n(\s*")', r'\1,\n\2', contenido)
+    # Número o true/false seguido de clave sin coma
+    contenido = re.sub(r'([\d\.]+|true|false)\s*\n(\s*")', r'\1,\n\2', contenido)
+
+    # 5. Trailing commas antes de } o ]  →  eliminarlas
+    contenido = re.sub(r',(\s*[}\]])', r'\1', contenido)
+
+    # 6. Punto y coma al final del archivo (estilo MongoDB shell)
+    contenido = re.sub(r';\s*$', '', contenido.strip())
+
+    return contenido
+
+
+def cargar_json_a_mongo(db, ruta_archivo, nombre_coleccion):
+    """
+    Lee un archivo .json, limpia errores de sintaxis comunes y sube los
+    documentos a la colección indicada.
+    """
+    if not os.path.exists(ruta_archivo):
+        print(f"  ❌ Archivo no encontrado: {ruta_archivo}")
+        return
+
+    with open(ruta_archivo, "r", encoding="utf-8") as f:
+        contenido = f.read()
+
+    contenido = limpiar_sintaxis_json(contenido)
+
+    try:
+        datos = json.loads(contenido)
+    except json.JSONDecodeError as e:
+        # Mostrar contexto del error para facilitar corrección manual
+        lineas = contenido.splitlines()
+        linea_err = e.lineno - 1
+        print(f"  ❌ Error de sintaxis en línea {e.lineno}, columna {e.colno}: {e.msg}")
+        print("  Contexto:")
+        for i in range(max(0, linea_err - 2), min(len(lineas), linea_err + 3)):
+            marca = ">>>" if i == linea_err else "   "
+            print(f"  {marca} {i+1}: {lineas[i]}")
+        print("\n  Corrige el archivo JSON y vuelve a intentarlo.")
+        return
+
+    if not isinstance(datos, list):
+        datos = [datos]   # si viene un objeto solo, lo envolvemos en lista
+
+    # Si ya hay documentos en la colección, preguntar
+    coleccion = db[nombre_coleccion]
+    cantidad_actual = coleccion.count_documents({})
+    if cantidad_actual > 0:
+        respuesta = input(f"  ⚠️  La colección '{nombre_coleccion}' ya tiene {cantidad_actual} "
+                          f"documento(s). ¿Reemplazar? (s/n): ").strip().lower()
+        if respuesta == "s":
+            coleccion.drop()
+            print(f"  🗑️  Colección '{nombre_coleccion}' eliminada.")
+        else:
+            print("  ↩️  Carga cancelada.")
+            return
+
+    # Limpiar ISODate y subir
+    datos_limpios = [limpiar_documento(doc) for doc in datos]
+    resultado = coleccion.insert_many(datos_limpios)
+    print(f"  ✅ {len(resultado.inserted_ids)} documento(s) insertados en '{nombre_coleccion}'.")
+
+
+def menu_carga(db):
+    """
+    Submenú para cargar los archivos JSON a MongoDB.
+    Pide las rutas de los archivos clientes.json y pedidos.json.
+    """
+    print("\n── CARGA DE DATOS DESDE JSON ───────────────────────")
+    print("  Ingresa la ruta de cada archivo (o Enter para omitir).")
+    print("  Ejemplo de ruta: C:/Users/TuNombre/Desktop/clientes.json")
+    print("  Si el archivo está en la misma carpeta que este script,")
+    print("  puedes escribir solo el nombre: clientes.json\n")
+
+    archivos = {
+        "clientes": input("  Ruta archivo clientes.json: ").strip(),
+        "pedidos":  input("  Ruta archivo pedidos.json : ").strip(),
+    }
+
+    for coleccion, ruta in archivos.items():
+        if ruta:
+            print(f"\n  Cargando '{coleccion}'...")
+            cargar_json_a_mongo(db, ruta, coleccion)
+        else:
+            print(f"  ↩️  Se omitió la carga de '{coleccion}'.")
+
+
+# ─────────────────────────────────────────────
+#  FUNCIONES DE CONSULTA
+# ─────────────────────────────────────────────
+
+def consulta_1_clientes_inactivos(db):
+    """
+    Criterio 3.1.1 - Filtros y condiciones
+    Obtener listado de clientes inactivos con _id, nombre y fecha_registro.
+
+    Consulta MongoDB equivalente:
+        db.clientes.find(
+            { "Activo": false },
+            { "_id": 1, "nombre": 1, "fecha_registro": 1 }
+        )
+    """
+    print("\n── Clientes INACTIVOS ──────────────────────────────")
+
+    proyeccion = {"_id": 1, "nombre": 1, "fecha_registro": 1}
+    resultados = db.clientes.find({"Activo": False}, proyeccion)
+
+    encontrados = 0
+    for cliente in resultados:
+        fecha = cliente.get("fecha_registro")
+        if isinstance(fecha, datetime):
+            fecha = fecha.strftime("%Y-%m-%d")
+        print(f"  ID            : {cliente['_id']}")
+        print(f"  Nombre        : {cliente['nombre']}")
+        print(f"  Fecha registro: {fecha or 'N/A'}")
+        print("  " + "-" * 40)
+        encontrados += 1
+
+    if encontrados == 0:
+        print("  No se encontraron clientes inactivos.")
+    else:
+        print(f"  Total encontrados: {encontrados}")
+
+
+def consulta_2_buscar_por_regex(db, texto_busqueda):
+    """
+    Criterio 3.1.2 - Expresiones regulares
+    Buscar clientes por nombre parcial O por dominio de correo.
+    La búsqueda NO es sensible a mayúsculas/minúsculas (opción 'i').
+
+    Consulta MongoDB equivalente:
+        db.clientes.find({
+            $or: [
+                { "nombre": { $regex: <texto>, $options: "i" } },
+                { "email":  { $regex: <texto>, $options: "i" } }
+            ]
+        })
+    """
+    print(f"\n── Búsqueda regex: '{texto_busqueda}' ─────────────────")
+
+    patron = {"$regex": texto_busqueda, "$options": "i"}
+    filtro = {
+        "$or": [
+            {"nombre": patron},
+            {"email":  patron}
+        ]
+    }
+
+    resultados = db.clientes.find(filtro)
+    encontrados = 0
+
+    for cliente in resultados:
+        print(f"  ID    : {cliente['_id']}")
+        print(f"  Nombre: {cliente['nombre']}")
+        print(f"  Email : {cliente['email']}")
+        print("  " + "-" * 40)
+        encontrados += 1
+
+    if encontrados == 0:
+        print("  No se encontraron coincidencias.")
+    else:
+        print(f"  Total encontrados: {encontrados}")
+
+
+def consulta_3_cliente_tiene_producto(db, cliente_id, producto_id=101):
+    """
+    Criterio 3.1.3 - Consultas en subdocumentos / iteración
+    Verifica si un cliente tiene pedidos que incluyan el producto_id indicado.
+    Itera sobre el array 'productos' de cada pedido (subdocumento).
+
+    Consulta MongoDB equivalente:
+        db.pedidos.find({
+            "cliente_id": <cliente_id>,
+            "productos.producto_id": <producto_id>
+        })
+    """
+    print(f"\n── Pedidos de cliente '{cliente_id}' con producto {producto_id} ──")
+
+    filtro = {
+        "cliente_id": cliente_id,
+        "productos.producto_id": producto_id
+    }
+
+    resultados = list(db.pedidos.find(filtro))
+
+    if not resultados:
+        print(f"  El cliente NO tiene pedidos con el producto {producto_id}.")
+    else:
+        print(f"  ✅ El cliente SÍ tiene {len(resultados)} pedido(s) con el producto {producto_id}:")
+        for pedido in resultados:
+            fecha = pedido.get("fecha_pedido")
+            if isinstance(fecha, datetime):
+                fecha = fecha.strftime("%Y-%m-%d")
+            print(f"    Pedido ID : {pedido['_id']}")
+            print(f"    Fecha     : {fecha or 'N/A'}")
+            print(f"    Total     : ${pedido.get('monto_total', 0):.2f}")
+            for prod in pedido.get("productos", []):
+                if prod["producto_id"] == producto_id:
+                    print(f"    → Producto {prod['producto_id']}: "
+                          f"cantidad={prod['cantidad']}, precio=${prod['precio']:.2f}")
+            print("  " + "-" * 40)
+
+
+def consulta_4_cliente_mayor_pedidos(db):
+    """
+    Criterio 3.1.4 - Organización de comandos / $lookup / agregación
+    Encuentra el cliente con mayor número de pedidos usando $lookup y $group.
+
+    Consulta MongoDB equivalente (pipeline de agregación):
+        db.pedidos.aggregate([
+            { $group: { _id: "$cliente_id", total_pedidos: { $sum: 1 } } },
+            { $sort:  { total_pedidos: -1 } },
+            { $limit: 1 },
+            { $lookup: {
+                from: "clientes",
+                localField: "_id",
+                foreignField: "_id",
+                as: "info_cliente"
+            }},
+            { $unwind: "$info_cliente" }
+        ])
+    """
+    print("\n── Cliente con MAYOR número de pedidos ────────────────")
+
+    pipeline = [
+        {"$group": {"_id": "$cliente_id", "total_pedidos": {"$sum": 1}}},
+        {"$sort": {"total_pedidos": -1}},
+        {"$limit": 1},
+        {"$lookup": {
+            "from": "clientes",
+            "localField": "_id",
+            "foreignField": "_id",
+            "as": "info_cliente"
+        }},
+        {"$unwind": "$info_cliente"}
+    ]
+
+    resultados = list(db.pedidos.aggregate(pipeline))
+
+    if not resultados:
+        print("  No se encontraron datos.")
+    else:
+        r = resultados[0]
+        info = r["info_cliente"]
+        print(f"  ID Cliente    : {r['_id']}")
+        print(f"  Nombre        : {info.get('nombre', 'N/A')}")
+        print(f"  Email         : {info.get('email', 'N/A')}")
+        print(f"  Total pedidos : {r['total_pedidos']}")
+
+
+# ─────────────────────────────────────────────
+#  MENÚ PRINCIPAL
+# ─────────────────────────────────────────────
+
+def menu(db):
+    opciones = {
+        "0": "Cargar datos desde archivos JSON → MongoDB",
+        "1": "Listar clientes inactivos",
+        "2": "Buscar clientes por nombre o dominio de email (regex)",
+        "3": "Verificar si un cliente tiene el producto 101",
+        "4": "Cliente con mayor número de pedidos",
+        "9": "Salir"
+    }
+
+    while True:
+        print("\n══════════════════════════════════════════")
+        print("       SISTEMA DE CONSULTAS MONGODB       ")
+        print("══════════════════════════════════════════")
+        for k, v in opciones.items():
+            print(f"  [{k}] {v}")
+        print("══════════════════════════════════════════")
+
+        opcion = input("Selecciona una opción: ").strip()
+
+        if opcion == "0":
+            menu_carga(db)
+
+        elif opcion == "1":
+            consulta_1_clientes_inactivos(db)
+
+        elif opcion == "2":
+            texto = input("Ingresa nombre parcial o dominio (@gmail.com, etc.): ").strip()
+            if texto:
+                consulta_2_buscar_por_regex(db, texto)
+            else:
+                print("  ⚠️  Debes ingresar un texto de búsqueda.")
+
+        elif opcion == "3":
+            cliente_id = input("Ingresa el ID del cliente (ej: 11111111-1): ").strip()
+            if cliente_id:
+                consulta_3_cliente_tiene_producto(db, cliente_id, producto_id=101)
+            else:
+                print("  ⚠️  Debes ingresar un ID de cliente.")
+
+        elif opcion == "4":
+            consulta_4_cliente_mayor_pedidos(db)
+
+        elif opcion == "9":
+            print("\n👋 Saliendo del programa. ¡Hasta pronto!\n")
+            break
+
+        else:
+            print("  ⚠️  Opción no válida. Intenta de nuevo.")
+
+
+# ─────────────────────────────────────────────
+#  PUNTO DE ENTRADA
+# ─────────────────────────────────────────────
+
+if __name__ == "__main__":
+    cliente_mongo = conectar()
+    if cliente_mongo:
+        # Cambia "evaluacion_bd" por el nombre que quieras darle a tu base de datos
+        base_datos = cliente_mongo["evaluacion_bd"]
+        menu(base_datos)
+        cliente_mongo.close()
