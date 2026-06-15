@@ -149,28 +149,54 @@ def cargar_json_a_mongo(db, ruta_archivo, nombre_coleccion):
     print(f"  ✅ {len(resultado.inserted_ids)} documento(s) insertados en '{nombre_coleccion}'.")
 
 
+def detectar_json_locales():
+    """
+    Busca todos los archivos .json en la misma carpeta donde está el script.
+    Retorna lista de rutas absolutas ordenadas alfabéticamente.
+    """
+    carpeta = os.path.dirname(os.path.abspath(__file__))
+    archivos = [
+        os.path.join(carpeta, f)
+        for f in os.listdir(carpeta)
+        if f.lower().endswith(".json")
+    ]
+    return sorted(archivos)
+
+
 def menu_carga(db):
     """
-    Submenú para cargar los archivos JSON a MongoDB.
-    Pide las rutas de los archivos clientes.json y pedidos.json.
+    Detecta automáticamente los .json en la carpeta del script,
+    los lista y permite cargar cada uno en una colección con el
+    nombre que el usuario elija. Soporta 1, 2 o más archivos.
     """
     print("\n── CARGA DE DATOS DESDE JSON ───────────────────────")
-    print("  Ingresa la ruta de cada archivo (o Enter para omitir).")
-    print("  Ejemplo de ruta: C:/Users/TuNombre/Desktop/clientes.json")
-    print("  Si el archivo está en la misma carpeta que este script,")
-    print("  puedes escribir solo el nombre: clientes.json\n")
 
-    archivos = {
-        "clientes": input("  Ruta archivo clientes.json: ").strip(),
-        "pedidos":  input("  Ruta archivo pedidos.json : ").strip(),
-    }
+    archivos = detectar_json_locales()
 
-    for coleccion, ruta in archivos.items():
-        if ruta:
-            print(f"\n  Cargando '{coleccion}'...")
-            cargar_json_a_mongo(db, ruta, coleccion)
-        else:
-            print(f"  ↩️  Se omitió la carga de '{coleccion}'.")
+    if not archivos:
+        print("  ⚠️  No se encontraron archivos .json en la carpeta del script.")
+        print(f"  Carpeta revisada: {os.path.dirname(os.path.abspath(__file__))}")
+        return
+
+    print(f"  Se encontraron {len(archivos)} archivo(s):\n")
+    for i, ruta in enumerate(archivos, 1):
+        nombre = os.path.basename(ruta)
+        print(f"    [{i}] {nombre}")
+
+    print("\n  Para cada archivo indica el nombre de colección donde cargarlo.")
+    print("  Presiona Enter para omitir un archivo.\n")
+
+    for ruta in archivos:
+        nombre_archivo = os.path.basename(ruta)
+        nombre_col = input(f"  '{nombre_archivo}' → nombre de colección (Enter omite): ").strip()
+
+        if not nombre_col:
+            print("  ↩️  Omitido.\n")
+            continue
+
+        print(f"  Cargando en colección '{nombre_col}'...")
+        cargar_json_a_mongo(db, ruta, nombre_col)
+        print()
 
 
 # ─────────────────────────────────────────────
