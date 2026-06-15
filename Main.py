@@ -424,7 +424,9 @@ def menu(db):
 if __name__ == "__main__":
     cliente_mongo = conectar()
     if cliente_mongo:
-        # Cambia "evaluacion_bd" por el nombre que quieras darle a tu base de datos
-        base_datos = cliente_mongo["evaluacion_bd"]
+        # El nombre de la BD se toma automáticamente del nombre de la carpeta del proyecto
+        nombre_bd = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+        print(f"📂 Base de datos: '{nombre_bd}'")
+        base_datos = cliente_mongo[nombre_bd]
         menu(base_datos)
         cliente_mongo.close()
