@@ -409,6 +409,35 @@ def consulta_5_cliente_activo(db, cliente_id):
         print("  El cliente NO está activo o no existe.")
 
 
+def consulta_6_top_clientes_con_mas_pedidos(db):
+    print("\n── Top 3 clientes con más pedidos ────────────────")
+    pipeline = [
+        {"$group": {"_id": "$cliente_id", "total_pedidos": {"$sum": 1}}},
+        {"$sort": {"total_pedidos": -1}},
+        {"$limit": 3},
+        {"$lookup": {
+            "from": "clientes",
+            "localField": "_id",
+            "foreignField": "_id",
+            "as": "info_cliente"
+        }},
+        {"$unwind": "$info_cliente"}
+    ]
+
+    resultados = list(db.pedidos.aggregate(pipeline))
+
+    if not resultados:
+        print("  No se encontraron datos.")
+    else:
+        for r in resultados:
+            info = r["info_cliente"]
+            print(f"  ID Cliente    : {r['_id']}")
+            print(f"  Nombre        : {info.get('nombre', 'N/A')}")
+            print(f"  Email         : {info.get('email', 'N/A')}")
+            print(f"  Total pedidos : {r['total_pedidos']}")
+            print("  " + "-" * 40)
+
+
 # ─────────────────────────────────────────────
 #  MENÚ PRINCIPAL
 # ─────────────────────────────────────────────
@@ -421,6 +450,7 @@ def menu(db):
         "3": "Verificar si un cliente tiene el producto 101",
         "4": "Cliente con mayor número de pedidos",
         "5": "Consultar cliente activo",
+        "6": "Consultar Top 3 clientes con más pedidos",
         "9": "Salir"
     }
 
@@ -471,6 +501,34 @@ def menu(db):
                 consulta_5_cliente_activo(db, cliente_id)
             else:
                 print("  ⚠️  Debes ingresar un ID de cliente.")
+
+        elif opcion == "6":
+            print("\n── Top 3 clientes con más pedidos ────────────────")
+            pipeline = [
+                {"$group": {"_id": "$cliente_id", "total_pedidos": {"$sum": 1}}},
+                {"$sort": {"total_pedidos": -1}},
+                {"$limit": 3},
+                {"$lookup": {
+                    "from": "clientes",
+                    "localField": "_id",
+                    "foreignField": "_id",
+                    "as": "info_cliente"
+                }},
+                {"$unwind": "$info_cliente"}
+            ]
+
+            resultados = list(db.pedidos.aggregate(pipeline))
+
+            if not resultados:
+                print("  No se encontraron datos.")
+            else:
+                for r in resultados:
+                    info = r["info_cliente"]
+                    print(f"  ID Cliente    : {r['_id']}")
+                    print(f"  Nombre        : {info.get('nombre', 'N/A')}")
+                    print(f"  Email         : {info.get('email', 'N/A')}")
+                    print(f"  Total pedidos : {r['total_pedidos']}")
+                    print("  " + "-" * 40)
 
         elif opcion == "9":
             print("\n👋 Saliendo del programa. ¡Hasta pronto!\n")
