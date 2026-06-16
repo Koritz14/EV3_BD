@@ -20,12 +20,17 @@ def conectar():
     Cambia la URI si tu instancia usa otro puerto o autenticación.
     """
     try:
-        cliente = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=3000)
+        cliente = MongoClient(
+            "mongodb://localhost:27017/",
+            serverSelectionTimeoutMS=3000
+        )
         cliente.admin.command("ping")
         print("✅ Conexión exitosa a MongoDB\n")
         return cliente
     except ConnectionFailure:
-        print("❌ No se pudo conectar a MongoDB. Asegúrate de que Compass esté activo.")
+        msg = "❌ No se pudo conectar a MongoDB. "
+        msg += "Asegúrate de que Compass esté activo."
+        print(msg)
         return None
 
 
@@ -36,21 +41,26 @@ def conectar():
 def limpiar_documento(doc):
     """
     Los JSON de evaluación suelen venir con valores tipo ISODate("...") que
-    no son JSON estándar. Esta función los convierte a objetos datetime de Python
-    para que MongoDB los almacene correctamente como tipo Date.
+    no son JSON estándar. Esta función los convierte a objetos datetime de
+    Python para que MongoDB los almacene correctamente como tipo Date.
     """
     doc_limpio = {}
     for clave, valor in doc.items():
         if isinstance(valor, str) and valor.startswith("ISODate("):
-            # Extraemos la fecha entre comillas: ISODate("2025-08-14") → "2025-08-14"
-            fecha_str = valor[9:-2]          # quita ISODate(" y ")
+            # Extrae la fecha: ISODate("2025-08-14") → "2025-08-14"
+            fecha_str = valor[9:-2]  # quita ISODate(" y ")
             try:
                 doc_limpio[clave] = datetime.strptime(fecha_str, "%Y-%m-%d")
             except ValueError:
-                doc_limpio[clave] = valor    # si no parsea, lo deja como string
+                # si no parsea, lo deja como string
+                doc_limpio[clave] = valor
         elif isinstance(valor, list):
-            doc_limpio[clave] = [limpiar_documento(item) if isinstance(item, dict) else item
-                                 for item in valor]
+            doc_limpio[clave] = [
+                limpiar_documento(item)
+                if isinstance(item, dict)
+                else item
+                for item in valor
+            ]
         elif isinstance(valor, dict):
             doc_limpio[clave] = limpiar_documento(valor)
         else:
@@ -66,11 +76,10 @@ def limpiar_sintaxis_json(contenido):
       1. ISODate("...")        → "ISODate(...)"  (valor temporal)
       2. "clave":,            → "clave": null,   (valor vacío por error)
       3. "clave": value,\n}   → sin coma colgante antes de } o ]
-      4. "),                  → ",               (paréntesis en lugar de comilla)
+      4. "),                  → ",               (paréntesis en lugar de)
       5. falta coma entre pares  "valor"\n"clave" → "valor",\n"clave"
       6. Punto y coma final   ];  → ]
     """
-    import re
 
     # 1. ISODate("2025-08-14") → "ISODate(2025-08-14)"
     contenido = re.sub(r'ISODate\("([^"]+)"\)', r'"ISODate(\1)"', contenido)
@@ -85,10 +94,11 @@ def limpiar_sintaxis_json(contenido):
     contenido = re.sub(r'\)\s*,', '",', contenido)
 
     # 4. Coma faltante entre valor y siguiente clave:
-    #    "value"\n    "key"  →  "value",\n    "key"
-    contenido = re.sub(r'("(?:[^"\\]|\\.)*")\s*\n(\s*")', r'\1,\n\2', contenido)
+    pattern1 = r'("(?:[^"\\]|\\.)*")\s*\n(\s*")'
+    contenido = re.sub(pattern1, r'\1,\n\2', contenido)
     # Número o true/false seguido de clave sin coma
-    contenido = re.sub(r'([\d\.]+|true|false)\s*\n(\s*")', r'\1,\n\2', contenido)
+    pattern2 = r'([\d\.]+|true|false)\s*\n(\s*")'
+    contenido = re.sub(pattern2, r'\1,\n\2', contenido)
 
     # 5. Trailing commas antes de } o ]  →  eliminarlas
     contenido = re.sub(r',(\s*[}\]])', r'\1', contenido)
@@ -119,7 +129,9 @@ def cargar_json_a_mongo(db, ruta_archivo, nombre_coleccion):
         # Mostrar contexto del error para facilitar corrección manual
         lineas = contenido.splitlines()
         linea_err = e.lineno - 1
-        print(f"  ❌ Error de sintaxis en línea {e.lineno}, columna {e.colno}: {e.msg}")
+        msg = f"  ❌ Error de sintaxis en línea {e.lineno}, "
+        msg += f"columna {e.colno}: {e.msg}"
+        print(msg)
         print("  Contexto:")
         for i in range(max(0, linea_err - 2), min(len(lineas), linea_err + 3)):
             marca = ">>>" if i == linea_err else "   "
@@ -134,8 +146,10 @@ def cargar_json_a_mongo(db, ruta_archivo, nombre_coleccion):
     coleccion = db[nombre_coleccion]
     cantidad_actual = coleccion.count_documents({})
     if cantidad_actual > 0:
-        respuesta = input(f"  ⚠️  La colección '{nombre_coleccion}' ya tiene {cantidad_actual} "
-                          f"documento(s). ¿Reemplazar? (s/n): ").strip().lower()
+        prompt = f"  ⚠️  La colección '{nombre_coleccion}' "
+        prompt += f"ya tiene {cantidad_actual} documento(s). "
+        prompt += "¿Reemplazar? (s/n): "
+        respuesta = input(prompt).strip().lower()
         if respuesta == "s":
             coleccion.drop()
             print(f"  🗑️  Colección '{nombre_coleccion}' eliminada.")
@@ -146,7 +160,9 @@ def cargar_json_a_mongo(db, ruta_archivo, nombre_coleccion):
     # Limpiar ISODate y subir
     datos_limpios = [limpiar_documento(doc) for doc in datos]
     resultado = coleccion.insert_many(datos_limpios)
-    print(f"  ✅ {len(resultado.inserted_ids)} documento(s) insertados en '{nombre_coleccion}'.")
+    cantidad = len(resultado.inserted_ids)
+    print(f"  ✅ {cantidad} documento(s) insertados "
+          f"en '{nombre_coleccion}'.")
 
 
 def detectar_json_locales():
@@ -174,8 +190,11 @@ def menu_carga(db):
     archivos = detectar_json_locales()
 
     if not archivos:
-        print("  ⚠️  No se encontraron archivos .json en la carpeta del script.")
-        print(f"  Carpeta revisada: {os.path.dirname(os.path.abspath(__file__))}")
+        msg = "  ⚠️  No se encontraron archivos .json "
+        msg += "en la carpeta del script."
+        print(msg)
+        ruta = os.path.dirname(os.path.abspath(__file__))
+        print(f"  Carpeta revisada: {ruta}")
         return
 
     print(f"  Se encontraron {len(archivos)} archivo(s):\n")
@@ -183,12 +202,16 @@ def menu_carga(db):
         nombre = os.path.basename(ruta)
         print(f"    [{i}] {nombre}")
 
-    print("\n  Para cada archivo indica el nombre de colección donde cargarlo.")
+    msg = "\n  Para cada archivo indica el nombre de "
+    msg += "colección donde cargarlo."
+    print(msg)
     print("  Presiona Enter para omitir un archivo.\n")
 
     for ruta in archivos:
         nombre_archivo = os.path.basename(ruta)
-        nombre_col = input(f"  '{nombre_archivo}' → nombre de colección (Enter omite): ").strip()
+        prompt = f"  '{nombre_archivo}' → nombre de "
+        prompt += "colección (Enter omite): "
+        nombre_col = input(prompt).strip()
 
         if not nombre_col:
             print("  ↩️  Omitido.\n")
@@ -288,7 +311,9 @@ def consulta_3_cliente_tiene_producto(db, cliente_id, producto_id=101):
             "productos.producto_id": <producto_id>
         })
     """
-    print(f"\n── Pedidos de cliente '{cliente_id}' con producto {producto_id} ──")
+    msg = f"\n── Pedidos de cliente '{cliente_id}' "
+    msg += f"con producto {producto_id} ──"
+    print(msg)
 
     filtro = {
         "cliente_id": cliente_id,
@@ -298,9 +323,14 @@ def consulta_3_cliente_tiene_producto(db, cliente_id, producto_id=101):
     resultados = list(db.pedidos.find(filtro))
 
     if not resultados:
-        print(f"  El cliente NO tiene pedidos con el producto {producto_id}.")
+        msg = "  El cliente NO tiene pedidos "
+        msg += f"con el producto {producto_id}."
+        print(msg)
     else:
-        print(f"  ✅ El cliente SÍ tiene {len(resultados)} pedido(s) con el producto {producto_id}:")
+        cantidad = len(resultados)
+        msg = f"  ✅ El cliente SÍ tiene {cantidad} "
+        msg += f"pedido(s) con el producto {producto_id}:"
+        print(msg)
         for pedido in resultados:
             fecha = pedido.get("fecha_pedido")
             if isinstance(fecha, datetime):
@@ -310,8 +340,10 @@ def consulta_3_cliente_tiene_producto(db, cliente_id, producto_id=101):
             print(f"    Total     : ${pedido.get('monto_total', 0):.2f}")
             for prod in pedido.get("productos", []):
                 if prod["producto_id"] == producto_id:
-                    print(f"    → Producto {prod['producto_id']}: "
-                          f"cantidad={prod['cantidad']}, precio=${prod['precio']:.2f}")
+                    msg = f"    → Producto {prod['producto_id']}: "
+                    msg += f"cantidad={prod['cantidad']}, "
+                    msg += f"precio=${prod['precio']:.2f}"
+                    print(msg)
             print("  " + "-" * 40)
 
 
@@ -393,16 +425,22 @@ def menu(db):
             consulta_1_clientes_inactivos(db)
 
         elif opcion == "2":
-            texto = input("Ingresa nombre parcial o dominio (@gmail.com, etc.): ").strip()
+            prompt = "Ingresa nombre parcial o dominio "
+            prompt += "(@gmail.com, etc.): "
+            texto = input(prompt).strip()
             if texto:
                 consulta_2_buscar_por_regex(db, texto)
             else:
                 print("  ⚠️  Debes ingresar un texto de búsqueda.")
 
         elif opcion == "3":
-            cliente_id = input("Ingresa el ID del cliente (ej: 11111111-1): ").strip()
+            prompt = "Ingresa el ID del cliente "
+            prompt += "(ej: 11111111-1): "
+            cliente_id = input(prompt).strip()
             if cliente_id:
-                consulta_3_cliente_tiene_producto(db, cliente_id, producto_id=101)
+                consulta_3_cliente_tiene_producto(
+                    db, cliente_id, producto_id=101
+                )
             else:
                 print("  ⚠️  Debes ingresar un ID de cliente.")
 
@@ -424,8 +462,10 @@ def menu(db):
 if __name__ == "__main__":
     cliente_mongo = conectar()
     if cliente_mongo:
-        # El nombre de la BD se toma automáticamente del nombre de la carpeta del proyecto
-        nombre_bd = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+        # Nombre de BD automático del nombre de carpeta
+        nombre_bd = os.path.basename(
+            os.path.dirname(os.path.abspath(__file__))
+        )
         print(f"📂 Base de datos: '{nombre_bd}'")
         base_datos = cliente_mongo[nombre_bd]
         menu(base_datos)
