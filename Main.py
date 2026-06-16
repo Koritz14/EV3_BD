@@ -394,6 +394,21 @@ def consulta_4_cliente_mayor_pedidos(db):
         print(f"  Total pedidos : {r['total_pedidos']}")
 
 
+def consulta_5_cliente_activo(db, cliente_id):
+
+    print(f"\n── Verificar si cliente '{cliente_id}' está ACTIVO ──")
+
+    filtro = {"_id": cliente_id, "Activo": True}
+    resultado = db.clientes.find_one(filtro)
+
+    if resultado:
+        print("  El cliente está ACTIVO.")
+        print(f"  Nombre: {resultado.get('nombre', 'N/A')}")
+        print(f"  Email : {resultado.get('email', 'N/A')}")
+    else:
+        print("  El cliente NO está activo o no existe.")
+
+
 # ─────────────────────────────────────────────
 #  MENÚ PRINCIPAL
 # ─────────────────────────────────────────────
@@ -405,6 +420,7 @@ def menu(db):
         "2": "Buscar clientes por nombre o dominio de email (regex)",
         "3": "Verificar si un cliente tiene el producto 101",
         "4": "Cliente con mayor número de pedidos",
+        "5": "Consultar cliente activo",
         "9": "Salir"
     }
 
@@ -446,6 +462,15 @@ def menu(db):
 
         elif opcion == "4":
             consulta_4_cliente_mayor_pedidos(db)
+
+        elif opcion == "5":
+            prompt = "Ingresa el ID del cliente "
+            prompt += "(ej: 11111111-1): "
+            cliente_id = input(prompt).strip()
+            if cliente_id:
+                consulta_5_cliente_activo(db, cliente_id)
+            else:
+                print("  ⚠️  Debes ingresar un ID de cliente.")
 
         elif opcion == "9":
             print("\n👋 Saliendo del programa. ¡Hasta pronto!\n")
