@@ -505,7 +505,12 @@ def menu(db):
         elif opcion == "6":
             print("\n── Top 3 clientes con más pedidos ────────────────")
             pipeline = [
-                {"$group": {"_id": "$cliente_id", "total_pedidos": {"$sum": 1}}},
+                {
+                    "$group": {
+                        "_id": "$cliente_id",
+                        "total_pedidos": {"$sum": 1}
+                    }
+                },
                 {"$sort": {"total_pedidos": -1}},
                 {"$limit": 3},
                 {"$lookup": {
